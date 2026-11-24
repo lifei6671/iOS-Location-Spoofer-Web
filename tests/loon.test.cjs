@@ -162,8 +162,17 @@ for (const extension of ['plugin', 'sgmodule']) {
   });
 }
 
-test('configuration panel generates and imports the Loon URL while preserving Shadowrocket', async () => {
+test('configuration panel groups each client with its own argument display and copy action', async () => {
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
+  for (const client of ['shadowrocket', 'loon']) {
+    const group = html.match(new RegExp(`<section id="config-${client}-section"[^>]*>([\\s\\S]*?)</section>`));
+    assert.ok(group, `Missing ${client} configuration section`);
+    assert.ok(group[1].includes(`id="config-${client}-arg-text"`));
+    assert.ok(group[1].includes(`id="btn-${client}-copy-arg"`));
+    const otherClient = client === 'loon' ? 'shadowrocket' : 'loon';
+    assert.ok(!group[1].includes(`id="config-${otherClient}-arg-text"`));
+  }
+  assert.ok(!html.includes('id="config-arg-text"'));
   const section = html.slice(html.indexOf('var configPanelOpen = false;'), html.indexOf('// Click overlay closes everything'));
   const elements = new Map();
   const copied = [];
@@ -194,4 +203,14 @@ test('configuration panel generates and imports the Loon URL while preserving Sh
   const shadowUrl = element('config-url-text').textContent;
   assert.equal(context.window.location.href, 'shadowrocket://install/module?url=' + encodeURIComponent(shadowUrl));
   assert.equal(new URL(shadowUrl).pathname, '/ios-location-spoofer.sgmodule');
+  const expectedArgument = 'configUrl=https://example.com/loc.json?token=' + encodeURIComponent(token);
+  for (const client of ['shadowrocket', 'loon']) {
+    assert.equal(element(`config-${client}-arg-text`).textContent, expectedArgument);
+    // Distinct contents prove each copy button reads its own client's display.
+    const argument = expectedArgument + '&debug=' + (client === 'loon');
+    element(`config-${client}-arg-text`).textContent = argument;
+    element(`btn-${client}-copy-arg`).click();
+    await Promise.resolve();
+    assert.equal(copied.at(-1), argument);
+  }
 });
