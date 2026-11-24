@@ -238,6 +238,11 @@ html.dark .config-code-box{background:rgba(0,0,0,0.35);color:var(--text);border-
 }
 .config-section:last-child{border-bottom:none;}
 .config-arguments{margin-top:16px;}
+.config-debug-control{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:32px;margin-bottom:10px;font-size:14px;color:var(--text);cursor:pointer;
+}
+.config-debug-control input{width:18px;height:18px;accent-color:#3e63dd;cursor:pointer;}
 .config-title{
   font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px;
 }
@@ -1014,7 +1019,11 @@ html.dark #search-results::-webkit-scrollbar-thumb {
   <div id="config-content">
     <section id="config-shadowrocket-section" class="config-section" aria-labelledby="config-shadowrocket-title">
       <h3 id="config-shadowrocket-title" class="config-title">Shadowrocket</h3>
-      <div class="config-desc">导入模块，或复制链接到「配置 → 模块」中添加。</div>
+      <div class="config-desc">导入模块，或复制链接到「配置 → 模块」中添加。更改调试设置后需重新导入或替换模块链接。</div>
+      <label class="config-debug-control" for="config-shadowrocket-debug">
+        <span>调试日志</span>
+        <input id="config-shadowrocket-debug" type="checkbox" role="switch">
+      </label>
       <button class="config-action-btn" id="btn-config-import">一键导入模块</button>
       <div class="config-code-box" id="config-url-text" style="margin-top:10px;">...</div>
       <button class="config-action-btn" id="btn-config-copy-url">复制模块链接</button>
@@ -1026,7 +1035,11 @@ html.dark #search-results::-webkit-scrollbar-thumb {
     </section>
     <section id="config-loon-section" class="config-section" aria-labelledby="config-loon-title">
       <h3 id="config-loon-title" class="config-title">Loon 插件</h3>
-      <div class="config-desc">导入后启用插件、脚本与 MitM，并安装和信任 Loon 证书。也可复制链接，在 Loon 的「插件」中添加。</div>
+      <div class="config-desc">导入后启用脚本与 MitM，并信任 Loon 证书。更改调试设置后需重新导入或替换插件链接。</div>
+      <label class="config-debug-control" for="config-loon-debug">
+        <span>调试日志</span>
+        <input id="config-loon-debug" type="checkbox" role="switch">
+      </label>
       <button class="config-action-btn" id="btn-loon-import">导入 Loon 插件</button>
       <div class="config-code-box" id="config-loon-url-text" style="margin-top:10px;">...</div>
       <button class="config-action-btn" id="btn-loon-copy-url">复制插件链接</button>
@@ -1728,21 +1741,36 @@ function openConfigPanel() {
   configPanelOpen = true;
   $id('config-panel').classList.add('open');
   elOverlay.classList.add('visible');
-  
+
+  ['shadowrocket', 'loon'].forEach(function(client) {
+    $id('config-' + client + '-debug').checked = localStorage.getItem('gps_debug_' + client) === 'true';
+  });
+  updateConfigLinks();
+}
+
+function updateConfigLinks() {
   // Dynamically build paths
   var domain = window.location.origin;
   var tokenVal = localStorage.getItem('gps_token') || '';
   
   // Format links
-  var moduleUrl = domain + '/ios-location-spoofer.sgmodule' + (tokenVal ? '?token=' + encodeURIComponent(tokenVal) : '');
-  var loonUrl = domain + '/ios-location-spoofer.plugin' + (tokenVal ? '?token=' + encodeURIComponent(tokenVal) : '');
   var argText = 'configUrl=' + domain + '/loc.json' + (tokenVal ? '?token=' + encodeURIComponent(tokenVal) : '');
-  
-  $id('config-url-text').textContent = moduleUrl;
-  $id('config-loon-url-text').textContent = loonUrl;
-  $id('config-shadowrocket-arg-text').textContent = argText;
-  $id('config-loon-arg-text').textContent = argText;
+  var queryPrefix = tokenVal ? '?token=' + encodeURIComponent(tokenVal) + '&' : '?';
+  var shadowrocketDebug = $id('config-shadowrocket-debug').checked;
+  var loonDebug = $id('config-loon-debug').checked;
+
+  $id('config-url-text').textContent = domain + '/ios-location-spoofer.sgmodule' + queryPrefix + 'debug=' + shadowrocketDebug;
+  $id('config-loon-url-text').textContent = domain + '/ios-location-spoofer.plugin' + queryPrefix + 'debug=' + loonDebug;
+  $id('config-shadowrocket-arg-text').textContent = argText + '&debug=' + shadowrocketDebug;
+  $id('config-loon-arg-text').textContent = argText + '&debug=' + loonDebug;
 }
+
+['shadowrocket', 'loon'].forEach(function(client) {
+  $id('config-' + client + '-debug').addEventListener('change', function() {
+    localStorage.setItem('gps_debug_' + client, this.checked ? 'true' : 'false');
+    updateConfigLinks();
+  });
+});
 
 function closeConfigPanel() {
   configPanelOpen = false;

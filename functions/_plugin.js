@@ -14,9 +14,11 @@ export async function renderPlugin({ request, env }) {
   const host = request.headers.get('host') || url.host;
   const protocol = request.headers.get('x-forwarded-proto') || url.protocol.replace(':', '');
   const token = encodeURIComponent(url.searchParams.get('token') || '');
+  const debug = url.searchParams.get('debug') === 'true';
   let content = await response.text();
   content = content.replace(/你的域名/g, () => host);
   content = content.replace(/你的Token/g, () => token);
+  content = content.replace(/&debug=false\b/g, '&debug=' + debug);
 
   if (protocol === 'https') {
     content = content.replace(/http:\/\/localhost:8080/g, () => 'https://' + host);

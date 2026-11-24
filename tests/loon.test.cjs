@@ -24,8 +24,10 @@ const fixture = api.buildSyntheticResponse(api.concatBytes([
 function runRuntime({ loon = true, argument = '', body = fixture, remote } = {}) {
   const completions = [];
   const requests = [];
+  const logs = [];
   const context = {
     Uint8Array, ArrayBuffer,
+    console: { log: message => logs.push(message) },
     $request: { url: 'https://gs-loc.apple.com/clls/wloc' },
     $response: { status: 200, headers: { 'Content-Type': 'application/octet-stream' }, body },
     $argument: argument,
@@ -42,7 +44,7 @@ function runRuntime({ loon = true, argument = '', body = fixture, remote } = {})
   };
   if (loon) context.$loon = 'iPhone 18.0 3.5.1';
   vm.runInNewContext(source, context);
-  return { completions, requests };
+  return { completions, requests, logs };
 }
 
 function readLocation(body) {
@@ -160,6 +162,32 @@ for (const extension of ['plugin', 'sgmodule']) {
     const missing = await onRequestGet({ request: new Request('https://example.com/missing'), env: { ASSETS: { fetch: async () => new Response('', { status: 404 }) } } });
     assert.equal(missing.status, 404);
   });
+
+  test(`${extension} subscription debug parameter controls runtime logging`, async () => {
+    const { onRequestGet } = await import(pathToFileURL(path.join(root, `functions/ios-location-spoofer.${extension}.js`)));
+    const template = fs.readFileSync(path.join(root, `public/ios-location-spoofer.${extension}`), 'utf8');
+    for (const debug of [undefined, 'false', 'true', '1', 'TRUE', 'true&failOpen=false']) {
+      const url = new URL(`https://example.com/ios-location-spoofer.${extension}`);
+      url.searchParams.set('token', 'a&b=中文');
+      if (debug !== undefined) url.searchParams.set('debug', debug);
+      const response = await onRequestGet({
+        request: new Request(url), env: { ASSETS: { fetch: async () => new Response(template) } }
+      });
+      assert.equal(response.status, 200);
+      const content = await response.text();
+      const argument = content.match(/argument="?([^"\r\n]+)/)[1];
+      const args = api.parseArgumentString(argument);
+      const enabled = debug === 'true';
+      assert.equal(args.debug, String(enabled));
+      assert.equal(args.failOpen, undefined);
+      assert.equal(new URL(args.configUrl).searchParams.get('token'), 'a&b=中文');
+      assert.equal(new URL(args.configUrl).searchParams.has('debug'), false);
+      const { logs, completions } = runRuntime({ loon: extension === 'plugin', argument });
+      await Promise.resolve();
+      assert.equal(completions.length, 1);
+      assert.equal(logs.some(line => line.includes('[Location Spoofer] Patched ')), enabled);
+    }
+  });
 }
 
 test('configuration panel groups each client with its own argument display and copy action', async () => {
@@ -169,6 +197,7 @@ test('configuration panel groups each client with its own argument display and c
     assert.ok(group, `Missing ${client} configuration section`);
     assert.ok(group[1].includes(`id="config-${client}-arg-text"`));
     assert.ok(group[1].includes(`id="btn-${client}-copy-arg"`));
+    assert.ok(group[1].includes(`id="config-${client}-debug"`));
     const otherClient = client === 'loon' ? 'shadowrocket' : 'loon';
     assert.ok(!group[1].includes(`id="config-${otherClient}-arg-text"`));
   }
@@ -182,9 +211,10 @@ test('configuration panel groups each client with its own argument display and c
     return elements.get(id);
   };
   const token = 'a&b=c 中文';
+  const storage = new Map([['gps_token', token]]);
   const context = {
     $id: element, window: { location: { origin: 'https://example.com', href: '' } },
-    localStorage: { getItem: () => token },
+    localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
     elOverlay: { classList: { add() {}, remove() {} } }, favPanelOpen: false,
     navigator: { clipboard: { writeText(text) { copied.push(text); return Promise.resolve(); } } },
     toast() {}
@@ -194,6 +224,7 @@ test('configuration panel groups each client with its own argument display and c
   const loonUrl = element('config-loon-url-text').textContent;
   assert.equal(new URL(loonUrl).pathname, '/ios-location-spoofer.plugin');
   assert.equal(new URL(loonUrl).searchParams.get('token'), token);
+  assert.equal(new URL(loonUrl).searchParams.get('debug'), 'false');
   element('btn-loon-import').click();
   assert.equal(context.window.location.href, 'loon://import?plugin=' + encodeURIComponent(loonUrl));
   element('btn-loon-copy-url').click();
@@ -203,14 +234,64 @@ test('configuration panel groups each client with its own argument display and c
   const shadowUrl = element('config-url-text').textContent;
   assert.equal(context.window.location.href, 'shadowrocket://install/module?url=' + encodeURIComponent(shadowUrl));
   assert.equal(new URL(shadowUrl).pathname, '/ios-location-spoofer.sgmodule');
-  const expectedArgument = 'configUrl=https://example.com/loc.json?token=' + encodeURIComponent(token);
+  const expectedArgument = 'configUrl=https://example.com/loc.json?token=' + encodeURIComponent(token) + '&debug=false';
   for (const client of ['shadowrocket', 'loon']) {
     assert.equal(element(`config-${client}-arg-text`).textContent, expectedArgument);
     // Distinct contents prove each copy button reads its own client's display.
-    const argument = expectedArgument + '&debug=' + (client === 'loon');
+    const argument = expectedArgument.replace('debug=false', 'debug=' + (client === 'loon'));
     element(`config-${client}-arg-text`).textContent = argument;
     element(`btn-${client}-copy-arg`).click();
     await Promise.resolve();
     assert.equal(copied.at(-1), argument);
   }
+
+  const loonToggle = element('config-loon-debug');
+  const shadowrocketToggle = element('config-shadowrocket-debug');
+  loonToggle.checked = true;
+  loonToggle.change();
+  const debugLoonUrl = element('config-loon-url-text').textContent;
+  assert.equal(new URL(debugLoonUrl).searchParams.get('debug'), 'true');
+  assert.equal(new URL(debugLoonUrl).searchParams.get('token'), token);
+  assert.equal(new URL(element('config-url-text').textContent).searchParams.get('debug'), 'false');
+  assert.equal(element('config-loon-arg-text').textContent, expectedArgument.replace('debug=false', 'debug=true'));
+  assert.equal(element('config-shadowrocket-arg-text').textContent, expectedArgument);
+  element('btn-loon-import').click();
+  assert.equal(context.window.location.href, 'loon://import?plugin=' + encodeURIComponent(debugLoonUrl));
+  element('btn-loon-copy-url').click();
+  await Promise.resolve();
+  assert.equal(copied.at(-1), debugLoonUrl);
+  assert.equal(storage.get('gps_debug_loon'), 'true');
+
+  shadowrocketToggle.checked = true;
+  shadowrocketToggle.change();
+  const debugShadowrocketUrl = element('config-url-text').textContent;
+  assert.equal(new URL(debugShadowrocketUrl).searchParams.get('debug'), 'true');
+  assert.equal(element('config-shadowrocket-arg-text').textContent, expectedArgument.replace('debug=false', 'debug=true'));
+  element('btn-config-import').click();
+  assert.equal(context.window.location.href, 'shadowrocket://install/module?url=' + encodeURIComponent(debugShadowrocketUrl));
+  element('btn-config-copy-url').click();
+  await Promise.resolve();
+  assert.equal(copied.at(-1), debugShadowrocketUrl);
+
+  context.closeConfigPanel();
+  loonToggle.checked = false;
+  shadowrocketToggle.checked = false;
+  context.openConfigPanel();
+  assert.equal(loonToggle.checked, true);
+  assert.equal(shadowrocketToggle.checked, true);
+  loonToggle.checked = false;
+  loonToggle.change();
+  assert.equal(storage.get('gps_debug_loon'), 'false');
+  assert.equal(storage.get('gps_debug_shadowrocket'), 'true');
+  assert.equal(new URL(element('config-loon-url-text').textContent).searchParams.get('debug'), 'false');
+
+  storage.delete('gps_token');
+  context.openConfigPanel();
+  for (const id of ['config-url-text', 'config-loon-url-text']) {
+    const url = new URL(element(id).textContent);
+    assert.equal(url.searchParams.has('token'), false);
+    assert.equal([...url.searchParams.keys()].join(','), 'debug');
+  }
+  assert.equal(element('config-loon-arg-text').textContent, 'configUrl=https://example.com/loc.json&debug=false');
+  assert.equal(element('config-shadowrocket-arg-text').textContent, 'configUrl=https://example.com/loc.json&debug=true');
 });
