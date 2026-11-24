@@ -960,7 +960,7 @@ html.dark #search-results::-webkit-scrollbar-thumb {
 </button>
 
 <!-- Left: Config button -->
-<button id="config-btn" aria-label="小火箭配置">
+<button id="config-btn" aria-label="客户端配置">
   <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
 </button>
 
@@ -1005,7 +1005,7 @@ html.dark #search-results::-webkit-scrollbar-thumb {
 <!-- Config panel -->
 <div id="config-panel">
   <div id="config-panel-header">
-    <h2>Shadowrocket 配置</h2>
+    <h2>客户端配置</h2>
     <button id="config-close">
       <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
     </button>
@@ -1023,8 +1023,15 @@ html.dark #search-results::-webkit-scrollbar-thumb {
       <button class="config-action-btn" id="btn-config-copy-url">复制模块链接</button>
     </div>
     <div class="config-section">
-      <div class="config-title">方法 C：一键复制 argument 参数</div>
-      <div class="config-desc">如果您已导入了模块，只需将下方为您拼装好的 argument 覆盖原模块参数即可。</div>
+      <div class="config-title">Loon 插件</div>
+      <div class="config-desc">导入后启用插件、脚本与 MitM，并安装和信任 Loon 证书。也可复制链接，在 Loon 的「插件」中添加。</div>
+      <button class="config-action-btn" id="btn-loon-import">导入 Loon 插件</button>
+      <div class="config-code-box" id="config-loon-url-text" style="margin-top:10px;">...</div>
+      <button class="config-action-btn" id="btn-loon-copy-url">复制插件链接</button>
+    </div>
+    <div class="config-section">
+      <div class="config-title">更新 argument 参数</div>
+      <div class="config-desc">已导入模块或插件时，可将下方参数填入对应脚本的 argument。</div>
       <div class="config-code-box" id="config-arg-text">...</div>
       <button class="config-action-btn" id="btn-config-copy-arg">复制 argument 参数</button>
     </div>
@@ -1727,9 +1734,11 @@ function openConfigPanel() {
   
   // Format links
   var moduleUrl = domain + '/ios-location-spoofer.sgmodule' + (tokenVal ? '?token=' + encodeURIComponent(tokenVal) : '');
+  var loonUrl = domain + '/ios-location-spoofer.plugin' + (tokenVal ? '?token=' + encodeURIComponent(tokenVal) : '');
   var argText = 'configUrl=' + domain + '/loc.json' + (tokenVal ? '?token=' + encodeURIComponent(tokenVal) : '');
   
   $id('config-url-text').textContent = moduleUrl;
+  $id('config-loon-url-text').textContent = loonUrl;
   $id('config-arg-text').textContent = argText;
 }
 
@@ -1755,6 +1764,18 @@ $id('btn-config-import').addEventListener('click', function() {
 $id('btn-config-copy-url').addEventListener('click', function() {
   navigator.clipboard.writeText($id('config-url-text').textContent)
     .then(function() { toast('模块链接已复制'); })
+    .catch(function() { toast('复制失败，请手动选择复制'); });
+});
+
+$id('btn-loon-import').addEventListener('click', function() {
+  var url = $id('config-loon-url-text').textContent;
+  window.location.href = 'loon://import?plugin=' + encodeURIComponent(url);
+  toast('已唤起 Loon 导入插件');
+});
+
+$id('btn-loon-copy-url').addEventListener('click', function() {
+  navigator.clipboard.writeText($id('config-loon-url-text').textContent)
+    .then(function() { toast('插件链接已复制'); })
     .catch(function() { toast('复制失败，请手动选择复制'); });
 });
 

@@ -8,7 +8,7 @@
  * 若您是通过付费渠道获取本项目的，请立即申请退款并举报不良商家！
  * 
  * 【架构说明】：
- * 本脚本为 iOS-Location-Spoofer-Web 项目的核心客户端代理改写模块，专为 Shadowrocket（小火箭）环境设计。
+ * 本脚本为 iOS-Location-Spoofer-Web 项目的核心客户端代理改写模块，支持 Shadowrocket（小火箭）与 Loon。
  * 本实现采用自主重构的流式 Protobuf 编解码引擎与纯 JS 64 位整数运算（零 BigInt 依赖），
  * 原生兼容 iOS 12+ 至 iOS 27+ 各版本系统。
  *
@@ -779,14 +779,16 @@
   }
 
   /* ─────────────────────────────────────────────────────────────
-     8. Shadowrocket 运行时接入 (Shadowrocket Runtime Integration)
+     8. 代理客户端运行时接入 (Proxy Runtime Integration)
   ───────────────────────────────────────────────────────────── */
+  var isLoon = typeof $loon !== "undefined";
+
   function fetchRemoteConfig(url, callback) {
     if (!url || typeof $httpClient === "undefined") {
       callback(null);
       return;
     }
-    $httpClient.get({ url: url, timeout: 5 }, function (err, resp, data) {
+    $httpClient.get({ url: url, timeout: isLoon ? 5000 : 5 }, function (err, resp, data) {
       if (err || !data || (resp && resp.status >= 400)) {
         callback(null);
         return;
@@ -800,7 +802,7 @@
     });
   }
 
-  function runShadowrocket() {
+  function runProxyRuntime() {
     var hasResponse = typeof $response !== "undefined" && $response != null;
     var hasRequest = typeof $request !== "undefined" && $request != null;
 
@@ -815,6 +817,11 @@
       $done({});
     }
 
+    function finishResponse(response) {
+      // Loon 的响应脚本直接返回响应字段；Shadowrocket 保留原有包装格式。
+      $done(isLoon && hasResponse ? response : { response: response });
+    }
+
     function completeResponse(bodyBytes, wifiCount, cellCount) {
       var headers = ($response && $response.headers) ? $response.headers : {};
       delete headers["Content-Encoding"];
@@ -824,12 +831,10 @@
       headers["X-Location-Spoofer-Wifi"] = String(wifiCount);
       headers["X-Location-Spoofer-Cell"] = String(cellCount);
 
-      $done({
-        response: {
-          status: 200,
-          headers: headers,
-          body: bodyBytes
-        }
+      finishResponse({
+        status: 200,
+        headers: headers,
+        body: bodyBytes
       });
     }
 
@@ -853,12 +858,10 @@
         if (activeConfig.failOpen) {
           passThrough();
         } else {
-          $done({
-            response: {
-              status: "HTTP/1.1 500 Internal Server Error",
-              headers: { "Content-Type": "text/plain" },
-              body: "Location spoofing failed: " + err.message
-            }
+          finishResponse({
+            status: isLoon ? 500 : "HTTP/1.1 500 Internal Server Error",
+            headers: { "Content-Type": "text/plain" },
+            body: "Location spoofing failed: " + err.message
           });
         }
       }
@@ -917,6 +920,6 @@
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   } else {
-    runShadowrocket();
+    runProxyRuntime();
   }
 }());
